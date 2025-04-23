@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { csrf } from "hono/csrf";
 import type { Cast, CastResponse } from "./types";
-import { getDateFilter } from "./utils/utils";
+import { getDateFilter, getPopularityScore } from "./utils/utils";
 
 type Bindings = {
     NEYNAR_API_KEY: string;
@@ -21,7 +21,7 @@ app.get("/:fid", async (c) => {
     const sortField = (c.req.query("sortBy") as SortField) || "default";
     const sortOrder = (c.req.query("order") as SortOrder) || "desc";
     const limit = 150;
-    const includeReplies = false;
+    const includeReplies = true;
 
     if (Number.isNaN(fid)) {
         return c.json({ message: "Invalid FID format" }, { status: 400 });
@@ -75,6 +75,8 @@ app.get("/:fid", async (c) => {
                 `Fetched ${data.casts.length} casts, total: ${allCasts.length}`,
             );
 
+            console.log(allCasts);
+
             // check if oldest cast is after tuesday, if yes, then stop fetching more
             const oldestCastDate = new Date(
                 data.casts[data.casts.length - 1].timestamp,
@@ -103,55 +105,11 @@ app.get("/:fid", async (c) => {
 
         console.log(`Found ${filteredCasts.length} casts since Tuesday`);
 
-        //TODO: improve this - ask how warpcast measures.
-        const getPopularityScore = (cast: Cast) => {
-            const likesCount = cast.reactions?.likes_count || 0;
-            const recastsCount = cast.reactions?.recasts_count || 0;
-            const repliesCount = cast.replies?.count || 0;
-
-            // Weighted popularity score -
-            return likesCount + recastsCount * 1.2 + repliesCount;
-        };
-
-        const sortedCasts = filteredCasts.sort((a, b) => {
-            let comparison = 0;
-
-            switch (sortField) {
-                case "likes":
-                    comparison =
-                        (a.reactions?.likes_count || 0) -
-                        (b.reactions?.likes_count || 0);
-                    break;
-                case "recasts":
-                    comparison =
-                        (a.reactions?.recasts_count || 0) -
-                        (b.reactions?.recasts_count || 0);
-                    break;
-                case "replies":
-                    comparison =
-                        (a.replies?.count || 0) - (b.replies?.count || 0);
-                    break;
-                default:
-                    comparison = getPopularityScore(a) - getPopularityScore(b);
-                    break;
-            }
-
-            return sortOrder === "asc" ? comparison : -comparison;
-        });
-
-        // Take only the top 20
-        const topCasts = sortedCasts.slice(0, 20);
-
-        console.log(
-            `Found ${filteredCasts.length} casts since Tuesday, returning top ${topCasts.length}`,
-        );
-
         return c.json(
             {
-                casts: topCasts,
+                casts: filteredCasts,
                 meta: {
-                    sortBy: sortField,
-                    order: sortOrder,
+                    total: filteredCasts.length,
                 },
             },
             200,
